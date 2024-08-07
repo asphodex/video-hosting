@@ -31,8 +31,6 @@ func New(log *slog.Logger, videoSaver VideoSaver) http.HandlerFunc {
 			log.Error("Unable to parse author param", slog.String("error", err.Error()))
 			return
 		}
-
-		// get file
 		f, handler, err := r.FormFile("file")
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
@@ -54,26 +52,29 @@ func New(log *slog.Logger, videoSaver VideoSaver) http.HandlerFunc {
 			name = "Unnamed video"
 		}
 
-		// get file extension
 		fileExtension := strings.ToLower(filepath.Ext(handler.Filename))
 		if fileExtension != ".mp4" {
 			w.WriteHeader(http.StatusInternalServerError)
 			log.Error("Unsupported file extension", slog.String("error", err.Error()))
 		}
 
-		// create folders
 		path := filepath.Join(".", "storage/data/videos")
 		_ = os.MkdirAll(path, os.ModePerm)
 		fullPath := path + "/" + url + fileExtension
 
-		// open and copy files
 		file, err := os.OpenFile(fullPath, os.O_WRONLY|os.O_CREATE, os.ModePerm)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			log.Error("Unable to open file for writing", slog.String("error", err.Error()))
 			return
 		}
-		defer file.Close()
+		defer func(file *os.File) {
+			err := file.Close()
+			if err != nil {
+				log.Error("Unable to close multipart file", slog.String("error", err.Error()))
+				return
+			}
+		}(file)
 
 		_, err = io.Copy(file, f)
 		if err != nil {
@@ -88,7 +89,6 @@ func New(log *slog.Logger, videoSaver VideoSaver) http.HandlerFunc {
 			log.Error("Unable to save video", slog.String("error", err.Error()))
 		}
 
-		// send response
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode("File uploaded successfully")
 		log.Info("File uploaded successfully", slog.String("name", name), slog.String("path", path))
